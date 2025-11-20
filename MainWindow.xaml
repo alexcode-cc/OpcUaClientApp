@@ -50,6 +50,8 @@
                               SelectionChanged="CmbSecurityPolicy_SelectionChanged">
                         <ComboBoxItem Content="None"/>
                         <ComboBoxItem Content="Basic256Sha256"/>
+                        <ComboBoxItem Content="Aes128_Sha256_RsaOaep"/>
+                        <ComboBoxItem Content="Aes256_Sha256_RsaPss"/>
                     </ComboBox>
 
                     <TextBlock Grid.Column="2" Text="Message Security Mode:" VerticalAlignment="Center" Margin="20,0,10,0"/>

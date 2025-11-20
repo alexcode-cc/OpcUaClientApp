@@ -204,6 +204,8 @@ namespace OpcUaClientApp
             {
                 "None" => SecurityPolicies.None,
                 "Basic256Sha256" => SecurityPolicies.Basic256Sha256,
+                "Aes128_Sha256_RsaOaep" => SecurityPolicies.Aes128_Sha256_RsaOaep,
+                "Aes256_Sha256_RsaPss" => SecurityPolicies.Aes256_Sha256_RsaPss,
                 _ => SecurityPolicies.None
             };
         }

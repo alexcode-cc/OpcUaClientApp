@@ -38,9 +38,9 @@ namespace OpcUaClientApp
                 cmbMessageSecurityMode.SelectedIndex = 0; // None
                 cmbMessageSecurityMode.IsEnabled = false;
             }
-            else // Basic256Sha256
+            else // 任何安全策略（Basic256Sha256, Aes128_Sha256_RsaOaep, Aes256_Sha256_RsaPss）
             {
-                // 當 Security Policy 為 Basic256Sha256 時，可選擇 Sign 或 SignAndEncrypt
+                // 當 Security Policy 不為 None 時，可選擇 Sign 或 SignAndEncrypt
                 cmbMessageSecurityMode.IsEnabled = true;
 
                 // 如果當前選擇的是 None，則自動切換到 SignAndEncrypt
