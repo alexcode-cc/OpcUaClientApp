@@ -12,14 +12,61 @@ namespace OpcUaClientApp
     {
         private OpcUaClientManager? _clientManager;
         private OpcUaNodeItem? _selectedNode;
+        private AppSettings _appSettings;
 
         public MainWindow()
         {
             InitializeComponent();
             Log("應用程式已啟動");
 
+            // 載入應用程式設定
+            _appSettings = AppSettings.Load();
+            LoadLastEndpointSettings();
+
             // 初始化安全設定
             UpdateMessageSecurityModeOptions();
+        }
+
+        /// <summary>
+        /// 載入上次使用的端點設定
+        /// </summary>
+        private void LoadLastEndpointSettings()
+        {
+            if (!string.IsNullOrEmpty(_appSettings.LastEndpointUrl))
+            {
+                txtEndpointUrl.Text = _appSettings.LastEndpointUrl;
+                Log($"已載入上次使用的端點位址: {_appSettings.LastEndpointUrl}");
+            }
+
+            // 載入上次的 Security Policy
+            if (!string.IsNullOrEmpty(_appSettings.LastSecurityPolicy))
+            {
+                for (int i = 0; i < cmbSecurityPolicy.Items.Count; i++)
+                {
+                    if (cmbSecurityPolicy.Items[i] is ComboBoxItem item &&
+                        item.Content?.ToString() == _appSettings.LastSecurityPolicy)
+                    {
+                        cmbSecurityPolicy.SelectedIndex = i;
+                        Log($"已載入上次使用的 Security Policy: {_appSettings.LastSecurityPolicy}");
+                        break;
+                    }
+                }
+            }
+
+            // 載入上次的 Message Security Mode
+            if (!string.IsNullOrEmpty(_appSettings.LastMessageSecurityMode))
+            {
+                for (int i = 0; i < cmbMessageSecurityMode.Items.Count; i++)
+                {
+                    if (cmbMessageSecurityMode.Items[i] is ComboBoxItem item &&
+                        item.Content?.ToString() == _appSettings.LastMessageSecurityMode)
+                    {
+                        cmbMessageSecurityMode.SelectedIndex = i;
+                        Log($"已載入上次使用的 Message Security Mode: {_appSettings.LastMessageSecurityMode}");
+                        break;
+                    }
+                }
+            }
         }
 
         private void CmbSecurityPolicy_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -82,6 +129,13 @@ namespace OpcUaClientApp
                     txtEndpointUrl.IsEnabled = false;
                     cmbSecurityPolicy.IsEnabled = false;
                     cmbMessageSecurityMode.IsEnabled = false;
+
+                    // 儲存端點設定
+                    _appSettings.LastEndpointUrl = endpointUrl;
+                    _appSettings.LastSecurityPolicy = securityPolicy;
+                    _appSettings.LastMessageSecurityMode = messageSecurityMode;
+                    _appSettings.Save();
+                    Log("✓ 已儲存端點設定");
 
                     // 自動瀏覽根節點
                     await BrowseRootNodes();
