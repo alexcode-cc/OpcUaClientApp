@@ -17,6 +17,38 @@ namespace OpcUaClientApp
         {
             InitializeComponent();
             Log("應用程式已啟動");
+
+            // 初始化安全設定
+            UpdateMessageSecurityModeOptions();
+        }
+
+        private void CmbSecurityPolicy_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateMessageSecurityModeOptions();
+        }
+
+        private void UpdateMessageSecurityModeOptions()
+        {
+            if (cmbSecurityPolicy == null || cmbMessageSecurityMode == null)
+                return;
+
+            if (cmbSecurityPolicy.SelectedIndex == 0) // None
+            {
+                // 當 Security Policy 為 None 時，強制設定 Message Security Mode 為 None
+                cmbMessageSecurityMode.SelectedIndex = 0; // None
+                cmbMessageSecurityMode.IsEnabled = false;
+            }
+            else // Basic256Sha256
+            {
+                // 當 Security Policy 為 Basic256Sha256 時，可選擇 Sign 或 SignAndEncrypt
+                cmbMessageSecurityMode.IsEnabled = true;
+
+                // 如果當前選擇的是 None，則自動切換到 Sign
+                if (cmbMessageSecurityMode.SelectedIndex == 0)
+                {
+                    cmbMessageSecurityMode.SelectedIndex = 1; // Sign
+                }
+            }
         }
 
         private async void BtnConnect_Click(object sender, RoutedEventArgs e)
@@ -30,11 +62,16 @@ namespace OpcUaClientApp
                     return;
                 }
 
+                // 讀取安全設定
+                string securityPolicy = ((ComboBoxItem)cmbSecurityPolicy.SelectedItem)?.Content?.ToString() ?? "None";
+                string messageSecurityMode = ((ComboBoxItem)cmbMessageSecurityMode.SelectedItem)?.Content?.ToString() ?? "None";
+
                 Log($"正在連線到: {endpointUrl}");
+                Log($"Security Policy: {securityPolicy}, Message Security Mode: {messageSecurityMode}");
                 SetStatusLight(Colors.Yellow); // 連線中
 
                 _clientManager = new OpcUaClientManager();
-                bool success = await _clientManager.ConnectAsync(endpointUrl);
+                bool success = await _clientManager.ConnectAsync(endpointUrl, securityPolicy, messageSecurityMode);
 
                 if (success)
                 {
@@ -43,6 +80,8 @@ namespace OpcUaClientApp
                     btnConnect.IsEnabled = false;
                     btnDisconnect.IsEnabled = true;
                     txtEndpointUrl.IsEnabled = false;
+                    cmbSecurityPolicy.IsEnabled = false;
+                    cmbMessageSecurityMode.IsEnabled = false;
 
                     // 自動瀏覽根節點
                     await BrowseRootNodes();
@@ -51,7 +90,7 @@ namespace OpcUaClientApp
                 {
                     Log("✗ 連線失敗");
                     SetStatusLight(Colors.Red);
-                    MessageBox.Show("連線失敗，請檢查伺服器是否正在執行", "錯誤", 
+                    MessageBox.Show("連線失敗，請檢查伺服器是否正在執行及安全設定是否正確", "錯誤",
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
@@ -59,7 +98,7 @@ namespace OpcUaClientApp
             {
                 Log($"✗ 連線錯誤: {ex.Message}");
                 SetStatusLight(Colors.Red);
-                MessageBox.Show($"連線錯誤: {ex.Message}", "錯誤", 
+                MessageBox.Show($"連線錯誤: {ex.Message}", "錯誤",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -76,6 +115,10 @@ namespace OpcUaClientApp
                 btnConnect.IsEnabled = true;
                 btnDisconnect.IsEnabled = false;
                 txtEndpointUrl.IsEnabled = true;
+                cmbSecurityPolicy.IsEnabled = true;
+
+                // 重新更新Message Security Mode的選項
+                UpdateMessageSecurityModeOptions();
 
                 treeNodes.Items.Clear();
                 ClearNodeDetails();

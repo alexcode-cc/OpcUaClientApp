@@ -16,7 +16,7 @@ namespace OpcUaClientApp
 
         public bool IsConnected => _session != null && _session.Connected;
 
-        public async Task<bool> ConnectAsync(string endpointUrl)
+        public async Task<bool> ConnectAsync(string endpointUrl, string securityPolicy = "None", string messageSecurityMode = "None")
         {
             try
             {
@@ -51,8 +51,12 @@ namespace OpcUaClientApp
 
                 await _configuration.Validate(ApplicationType.Client);
 
+                // 將字串轉換為對應的 SecurityPolicy URI 和 MessageSecurityMode 枚舉
+                string securityPolicyUri = ConvertSecurityPolicyToUri(securityPolicy);
+                MessageSecurityMode securityMode = ConvertToMessageSecurityMode(messageSecurityMode);
+
                 // 選擇端點
-                var endpointDescription = CoreClientUtils.SelectEndpoint(endpointUrl, false, 15000);
+                var endpointDescription = SelectEndpoint(endpointUrl, securityPolicyUri, securityMode);
                 var endpointConfiguration = EndpointConfiguration.Create(_configuration);
                 var endpoint = new ConfiguredEndpoint(null, endpointDescription, endpointConfiguration);
 
@@ -72,6 +76,52 @@ namespace OpcUaClientApp
             catch (Exception)
             {
                 return false;
+            }
+        }
+
+        private string ConvertSecurityPolicyToUri(string securityPolicy)
+        {
+            return securityPolicy switch
+            {
+                "None" => SecurityPolicies.None,
+                "Basic256Sha256" => SecurityPolicies.Basic256Sha256,
+                _ => SecurityPolicies.None
+            };
+        }
+
+        private MessageSecurityMode ConvertToMessageSecurityMode(string mode)
+        {
+            return mode switch
+            {
+                "None" => MessageSecurityMode.None,
+                "Sign" => MessageSecurityMode.Sign,
+                "SignAndEncrypt" => MessageSecurityMode.SignAndEncrypt,
+                _ => MessageSecurityMode.None
+            };
+        }
+
+        private EndpointDescription SelectEndpoint(string endpointUrl, string securityPolicyUri, MessageSecurityMode securityMode)
+        {
+            // 發現所有端點
+            var endpointConfiguration = EndpointConfiguration.Create();
+            endpointConfiguration.OperationTimeout = 15000;
+
+            using (var discoveryClient = DiscoveryClient.Create(new Uri(endpointUrl), endpointConfiguration))
+            {
+                var endpoints = discoveryClient.GetEndpoints(null);
+
+                // 根據安全策略和安全模式篩選端點
+                var matchingEndpoint = endpoints.FirstOrDefault(e =>
+                    e.SecurityPolicyUri == securityPolicyUri &&
+                    e.SecurityMode == securityMode);
+
+                if (matchingEndpoint != null)
+                {
+                    return matchingEndpoint;
+                }
+
+                // 如果沒有找到完全匹配的端點，嘗試使用預設選擇
+                return CoreClientUtils.SelectEndpoint(endpointUrl, securityPolicyUri != SecurityPolicies.None, 15000);
             }
         }
 
