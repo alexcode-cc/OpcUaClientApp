@@ -30,12 +30,34 @@ namespace OpcUaClientApp
                 _configuration = new ApplicationConfiguration
                 {
                     ApplicationName = "OPC UA Client App",
+                    ApplicationUri = $"urn:{System.Net.Dns.GetHostName()}:OPCUAClientApp",
                     ApplicationType = ApplicationType.Client,
                     SecurityConfiguration = new SecurityConfiguration
                     {
-                        ApplicationCertificate = new CertificateIdentifier(),
+                        ApplicationCertificate = new CertificateIdentifier
+                        {
+                            StoreType = @"Directory",
+                            StorePath = @"OPC Foundation/CertificateStores/MachineDefault",
+                            SubjectName = "CN=OPC UA Client App, O=OPC Foundation"
+                        },
+                        TrustedIssuerCertificates = new CertificateTrustList
+                        {
+                            StoreType = @"Directory",
+                            StorePath = @"OPC Foundation/CertificateStores/UA Certificate Authorities"
+                        },
+                        TrustedPeerCertificates = new CertificateTrustList
+                        {
+                            StoreType = @"Directory",
+                            StorePath = @"OPC Foundation/CertificateStores/UA Applications"
+                        },
+                        RejectedCertificateStore = new CertificateTrustList
+                        {
+                            StoreType = @"Directory",
+                            StorePath = @"OPC Foundation/CertificateStores/RejectedCertificates"
+                        },
                         AutoAcceptUntrustedCertificates = true,
-                        RejectSHA1SignedCertificates = false
+                        RejectSHA1SignedCertificates = false,
+                        AddAppCertToTrustedStore = true
                     },
                     TransportQuotas = new TransportQuotas
                     {
@@ -57,6 +79,54 @@ namespace OpcUaClientApp
 
                 await _configuration.Validate(ApplicationType.Client);
                 log?.Invoke($"[偵錯] 應用程式配置驗證完成");
+
+                // 如果需要安全連線，檢查並創建應用程式證書
+                if (securityPolicy != "None")
+                {
+                    log?.Invoke($"[偵錯] 需要安全連線，檢查應用程式證書...");
+                    bool hasAppCertificate = await _configuration.SecurityConfiguration.ApplicationCertificate.Find(false);
+
+                    if (!hasAppCertificate)
+                    {
+                        log?.Invoke($"[偵錯] 應用程式證書不存在，開始創建自簽名證書...");
+
+                        // 創建自簽名證書
+                        var certificate = CertificateFactory.CreateCertificate(
+                            _configuration.SecurityConfiguration.ApplicationCertificate.StoreType,
+                            _configuration.SecurityConfiguration.ApplicationCertificate.StorePath,
+                            null,
+                            _configuration.ApplicationUri,
+                            _configuration.ApplicationName,
+                            _configuration.SecurityConfiguration.ApplicationCertificate.SubjectName,
+                            null,
+                            2048,
+                            DateTime.UtcNow - TimeSpan.FromDays(1),
+                            60, // 60 個月有效期
+                            256  // SHA256
+                        );
+
+                        _configuration.SecurityConfiguration.ApplicationCertificate.Certificate = certificate;
+                        log?.Invoke($"[偵錯] ✓ 已創建自簽名證書");
+                        log?.Invoke($"[偵錯]   Subject: {certificate.Subject}");
+                        log?.Invoke($"[偵錯]   Thumbprint: {certificate.Thumbprint}");
+                        log?.Invoke($"[偵錯]   有效期至: {certificate.NotAfter}");
+                    }
+                    else
+                    {
+                        log?.Invoke($"[偵錯] ✓ 找到現有的應用程式證書");
+                        var cert = _configuration.SecurityConfiguration.ApplicationCertificate.Certificate;
+                        if (cert != null)
+                        {
+                            log?.Invoke($"[偵錯]   Subject: {cert.Subject}");
+                            log?.Invoke($"[偵錯]   Thumbprint: {cert.Thumbprint}");
+                            log?.Invoke($"[偵錯]   有效期至: {cert.NotAfter}");
+                        }
+                    }
+                }
+                else
+                {
+                    log?.Invoke($"[偵錯] Security Policy 為 None，不需要應用程式證書");
+                }
 
                 // 將字串轉換為對應的 SecurityPolicy URI 和 MessageSecurityMode 枚舉
                 string securityPolicyUri = ConvertSecurityPolicyToUri(securityPolicy);
