@@ -84,9 +84,9 @@ namespace OpcUaClientApp
                 if (securityPolicy != "None")
                 {
                     log?.Invoke($"[偵錯] 需要安全連線，檢查應用程式證書...");
-                    bool hasAppCertificate = await _configuration.SecurityConfiguration.ApplicationCertificate.Find(false);
+                    var existingCertificate = await _configuration.SecurityConfiguration.ApplicationCertificate.Find(false);
 
-                    if (!hasAppCertificate)
+                    if (existingCertificate == null)
                     {
                         log?.Invoke($"[偵錯] 應用程式證書不存在，開始創建自簽名證書...");
 
@@ -114,13 +114,12 @@ namespace OpcUaClientApp
                     else
                     {
                         log?.Invoke($"[偵錯] ✓ 找到現有的應用程式證書");
-                        var cert = _configuration.SecurityConfiguration.ApplicationCertificate.Certificate;
-                        if (cert != null)
-                        {
-                            log?.Invoke($"[偵錯]   Subject: {cert.Subject}");
-                            log?.Invoke($"[偵錯]   Thumbprint: {cert.Thumbprint}");
-                            log?.Invoke($"[偵錯]   有效期至: {cert.NotAfter}");
-                        }
+                        log?.Invoke($"[偵錯]   Subject: {existingCertificate.Subject}");
+                        log?.Invoke($"[偵錯]   Thumbprint: {existingCertificate.Thumbprint}");
+                        log?.Invoke($"[偵錯]   有效期至: {existingCertificate.NotAfter}");
+
+                        // 確保證書已經設置到配置中
+                        _configuration.SecurityConfiguration.ApplicationCertificate.Certificate = existingCertificate;
                     }
                 }
                 else
