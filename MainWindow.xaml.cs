@@ -139,6 +139,9 @@ namespace OpcUaClientApp
 
                     // 自動瀏覽根節點
                     await BrowseRootNodes();
+
+                    // 自動導航到最後查看的節點
+                    await NavigateToLastViewedNode();
                 }
                 else
                 {
@@ -233,6 +236,9 @@ namespace OpcUaClientApp
                 _selectedNode = node;
                 DisplayNodeDetails(node);
 
+                // 保存最後查看的節點資訊
+                SaveLastViewedNode(node);
+
                 // 如果節點尚未載入子節點，則載入
                 if (node.Children.Count == 0 && node.NodeClass == NodeClass.Object)
                 {
@@ -249,6 +255,291 @@ namespace OpcUaClientApp
                         Log($"✗ 載入子節點錯誤: {ex.Message}");
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// 保存最後查看的節點資訊
+        /// </summary>
+        private void SaveLastViewedNode(OpcUaNodeItem node)
+        {
+            try
+            {
+                _appSettings.LastViewedNodeId = node.NodeId.ToString();
+                _appSettings.LastViewedNodeDisplayName = node.DisplayName;
+                _appSettings.LastViewedNodeClass = node.NodeClass.ToString();
+
+                // 構建節點路徑（從根到當前節點的路徑）
+                _appSettings.LastViewedNodePath = BuildNodePath(node);
+
+                _appSettings.Save();
+            }
+            catch (Exception ex)
+            {
+                Log($"✗ 保存節點資訊錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 構建節點路徑
+        /// </summary>
+        private string BuildNodePath(OpcUaNodeItem node)
+        {
+            // 使用節點的 DisplayName 和 NodeId 來構建路徑
+            // 格式: "DisplayName|NodeId"
+            return $"{node.DisplayName}|{node.NodeId}";
+        }
+
+        /// <summary>
+        /// 自動導航到最後查看的節點
+        /// </summary>
+        private async System.Threading.Tasks.Task NavigateToLastViewedNode()
+        {
+            if (string.IsNullOrEmpty(_appSettings.LastViewedNodeId))
+            {
+                return; // 沒有保存的節點資訊
+            }
+
+            try
+            {
+                Log($"正在導航到最後查看的節點: {_appSettings.LastViewedNodeDisplayName}");
+
+                // 解析 NodeId
+                var nodeId = NodeId.Parse(_appSettings.LastViewedNodeId);
+
+                // 在樹狀結構中查找並展開到該節點
+                var foundNode = await FindAndExpandToNode(nodeId);
+
+                if (foundNode != null)
+                {
+                    // 選中該節點
+                    SelectTreeViewItem(foundNode);
+
+                    Log($"✓ 已導航到節點: {foundNode.DisplayName}");
+
+                    // 如果是變數節點，自動讀取資料
+                    if (foundNode.NodeClass == NodeClass.Variable)
+                    {
+                        await System.Threading.Tasks.Task.Delay(300); // 稍微延遲以確保UI更新完成
+                        await AutoReadNodeValue(foundNode);
+
+                        // 如果有訂閱狀態，自動啟動訂閱
+                        if (_appSettings.LastViewedNodeIsSubscribed &&
+                            _appSettings.LastViewedSubscriptionInterval.HasValue)
+                        {
+                            await System.Threading.Tasks.Task.Delay(300);
+                            await AutoSubscribeNode(foundNode, _appSettings.LastViewedSubscriptionInterval.Value);
+                        }
+                    }
+                }
+                else
+                {
+                    Log($"✗ 無法找到節點: {_appSettings.LastViewedNodeDisplayName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"✗ 導航到節點錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 查找並展開到指定節點
+        /// </summary>
+        private async System.Threading.Tasks.Task<OpcUaNodeItem?> FindAndExpandToNode(NodeId targetNodeId)
+        {
+            try
+            {
+                // 從根節點開始搜索
+                if (treeNodes.Items.Count == 0)
+                {
+                    return null;
+                }
+
+                var rootNode = treeNodes.Items[0] as OpcUaNodeItem;
+                if (rootNode == null)
+                {
+                    return null;
+                }
+
+                // 檢查根節點是否就是目標
+                if (rootNode.NodeId == targetNodeId)
+                {
+                    return rootNode;
+                }
+
+                // 遞歸搜索子節點
+                return await SearchAndExpandNode(rootNode, targetNodeId);
+            }
+            catch (Exception ex)
+            {
+                Log($"✗ 查找節點錯誤: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 遞歸搜索並展開節點
+        /// </summary>
+        private async System.Threading.Tasks.Task<OpcUaNodeItem?> SearchAndExpandNode(OpcUaNodeItem parentNode, NodeId targetNodeId)
+        {
+            try
+            {
+                // 如果父節點是對象且尚未載入子節點，則載入
+                if (parentNode.NodeClass == NodeClass.Object && parentNode.Children.Count == 0)
+                {
+                    var children = await _clientManager!.BrowseAsync(parentNode.NodeId);
+                    foreach (var child in children)
+                    {
+                        parentNode.Children.Add(child);
+                    }
+                }
+
+                // 搜索子節點
+                foreach (var child in parentNode.Children)
+                {
+                    if (child.NodeId == targetNodeId)
+                    {
+                        return child; // 找到目標節點
+                    }
+
+                    // 如果子節點是對象，遞歸搜索
+                    if (child.NodeClass == NodeClass.Object)
+                    {
+                        var result = await SearchAndExpandNode(child, targetNodeId);
+                        if (result != null)
+                        {
+                            return result;
+                        }
+                    }
+                }
+
+                return null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 選中 TreeView 中的項目
+        /// </summary>
+        private void SelectTreeViewItem(OpcUaNodeItem node)
+        {
+            try
+            {
+                // 使用 TreeView 的選擇機制
+                var item = FindTreeViewItem(treeNodes, node);
+                if (item != null)
+                {
+                    item.IsSelected = true;
+                    item.BringIntoView();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"✗ 選中節點錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 在 TreeView 中查找對應的 TreeViewItem
+        /// </summary>
+        private TreeViewItem? FindTreeViewItem(ItemsControl container, OpcUaNodeItem node)
+        {
+            if (container == null)
+                return null;
+
+            foreach (var item in container.Items)
+            {
+                var treeViewItem = container.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
+                if (treeViewItem == null)
+                    continue;
+
+                if (item is OpcUaNodeItem currentNode && currentNode.NodeId == node.NodeId)
+                {
+                    return treeViewItem;
+                }
+
+                // 展開並搜索子項
+                treeViewItem.IsExpanded = true;
+                treeViewItem.UpdateLayout();
+
+                var result = FindTreeViewItem(treeViewItem, node);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 自動讀取節點值
+        /// </summary>
+        private async System.Threading.Tasks.Task AutoReadNodeValue(OpcUaNodeItem node)
+        {
+            try
+            {
+                Log($"正在自動讀取節點值: {node.DisplayName}");
+                var result = await _clientManager!.ReadValueAsync(node.NodeId);
+
+                if (result != null)
+                {
+                    txtCurrentValue.Text = result.Value?.ToString() ?? "null";
+                    txtTimestamp.Text = result.SourceTimestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff");
+                    Log($"✓ 自動讀取成功: {txtCurrentValue.Text}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"✗ 自動讀取錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 自動訂閱節點
+        /// </summary>
+        private async System.Threading.Tasks.Task AutoSubscribeNode(OpcUaNodeItem node, int interval)
+        {
+            try
+            {
+                Log($"正在自動訂閱節點: {node.DisplayName}, 間隔: {interval}ms");
+
+                _clientManager!.Subscribe(node.NodeId, interval, (nodeId, value, timestamp) =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        var message = $"[{timestamp:HH:mm:ss.fff}] {node.DisplayName} = {value}";
+                        lstMonitoredItems.Items.Insert(0, new { Message = message });
+
+                        // 限制列表項目數量
+                        if (lstMonitoredItems.Items.Count > 100)
+                        {
+                            lstMonitoredItems.Items.RemoveAt(lstMonitoredItems.Items.Count - 1);
+                        }
+
+                        // 如果當前選中的節點正在被監控，更新顯示
+                        if (_selectedNode != null && _selectedNode.NodeId == nodeId)
+                        {
+                            txtCurrentValue.Text = value?.ToString() ?? "null";
+                            txtTimestamp.Text = timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff");
+                        }
+                    });
+                });
+
+                // 更新訂閱間隔 UI
+                txtPublishingInterval.Text = interval.ToString();
+
+                Log($"✓ 已自動訂閱節點: {node.DisplayName}");
+
+                await System.Threading.Tasks.Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                Log($"✗ 自動訂閱錯誤: {ex.Message}");
             }
         }
 
@@ -388,7 +679,7 @@ namespace OpcUaClientApp
                     {
                         var message = $"[{timestamp:HH:mm:ss.fff}] {_selectedNode.DisplayName} = {value}";
                         lstMonitoredItems.Items.Insert(0, new { Message = message });
-                        
+
                         // 限制列表項目數量
                         if (lstMonitoredItems.Items.Count > 100)
                         {
@@ -404,8 +695,13 @@ namespace OpcUaClientApp
                     });
                 });
 
+                // 保存訂閱狀態
+                _appSettings.LastViewedNodeIsSubscribed = true;
+                _appSettings.LastViewedSubscriptionInterval = interval;
+                _appSettings.Save();
+
                 Log($"✓ 已訂閱節點: {_selectedNode.DisplayName}");
-                MessageBox.Show("訂閱成功，資料變化將即時顯示", "提示", 
+                MessageBox.Show("訂閱成功，資料變化將即時顯示", "提示",
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
@@ -422,6 +718,12 @@ namespace OpcUaClientApp
             {
                 _clientManager?.UnsubscribeAll();
                 lstMonitoredItems.Items.Clear();
+
+                // 清除訂閱狀態
+                _appSettings.LastViewedNodeIsSubscribed = false;
+                _appSettings.LastViewedSubscriptionInterval = null;
+                _appSettings.Save();
+
                 Log("✓ 已取消所有訂閱");
             }
             catch (Exception ex)

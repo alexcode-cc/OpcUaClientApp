@@ -10,9 +10,18 @@ namespace OpcUaClientApp
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpcUaClientApp");
         private static readonly string SettingsFile = Path.Combine(SettingsFolder, "settings.json");
 
+        // 端點連線設定
         public string? LastEndpointUrl { get; set; }
         public string? LastSecurityPolicy { get; set; }
         public string? LastMessageSecurityMode { get; set; }
+
+        // 最後查看的節點資訊
+        public string? LastViewedNodeId { get; set; }
+        public string? LastViewedNodeDisplayName { get; set; }
+        public string? LastViewedNodeClass { get; set; }
+        public string? LastViewedNodePath { get; set; }  // 節點路徑（用於樹狀結構展開）
+        public bool LastViewedNodeIsSubscribed { get; set; }
+        public int? LastViewedSubscriptionInterval { get; set; }
 
         /// <summary>
         /// 載入應用程式設定
