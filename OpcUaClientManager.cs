@@ -16,11 +16,17 @@ namespace OpcUaClientApp
 
         public bool IsConnected => _session != null && _session.Connected;
 
-        public async Task<bool> ConnectAsync(string endpointUrl, string securityPolicy = "None", string messageSecurityMode = "None")
+        public async Task<bool> ConnectAsync(string endpointUrl, string securityPolicy = "None", string messageSecurityMode = "None", Action<string>? log = null)
         {
             try
             {
+                log?.Invoke($"[偵錯] 開始連線程序");
+                log?.Invoke($"[偵錯] 端點: {endpointUrl}");
+                log?.Invoke($"[偵錯] 要求的 Security Policy: {securityPolicy}");
+                log?.Invoke($"[偵錯] 要求的 Message Security Mode: {messageSecurityMode}");
+
                 // 建立應用程式配置
+                log?.Invoke($"[偵錯] 建立應用程式配置...");
                 _configuration = new ApplicationConfiguration
                 {
                     ApplicationName = "OPC UA Client App",
@@ -50,17 +56,44 @@ namespace OpcUaClientApp
                 };
 
                 await _configuration.Validate(ApplicationType.Client);
+                log?.Invoke($"[偵錯] 應用程式配置驗證完成");
 
                 // 將字串轉換為對應的 SecurityPolicy URI 和 MessageSecurityMode 枚舉
                 string securityPolicyUri = ConvertSecurityPolicyToUri(securityPolicy);
                 MessageSecurityMode securityMode = ConvertToMessageSecurityMode(messageSecurityMode);
 
+                log?.Invoke($"[偵錯] 轉換後的 Security Policy URI: {securityPolicyUri}");
+                log?.Invoke($"[偵錯] 轉換後的 Message Security Mode: {securityMode}");
+
                 // 選擇端點
-                var endpointDescription = SelectEndpoint(endpointUrl, securityPolicyUri, securityMode);
+                log?.Invoke($"[偵錯] 開始發現並選擇端點...");
+                var endpointDescription = SelectEndpoint(endpointUrl, securityPolicyUri, securityMode, log);
+
+                log?.Invoke($"[偵錯] 已選擇端點:");
+                log?.Invoke($"[偵錯]   - 端點 URL: {endpointDescription.EndpointUrl}");
+                log?.Invoke($"[偵錯]   - Security Policy: {endpointDescription.SecurityPolicyUri}");
+                log?.Invoke($"[偵錯]   - Security Mode: {endpointDescription.SecurityMode}");
+                log?.Invoke($"[偵錯]   - Security Level: {endpointDescription.SecurityLevel}");
+
+                // 驗證選擇的端點
+                if (endpointDescription.SecurityPolicyUri != securityPolicyUri ||
+                    endpointDescription.SecurityMode != securityMode)
+                {
+                    throw new Exception(
+                        $"端點選擇錯誤！\n" +
+                        $"期望: Policy={securityPolicyUri}, Mode={securityMode}\n" +
+                        $"實際: Policy={endpointDescription.SecurityPolicyUri}, Mode={endpointDescription.SecurityMode}");
+                }
+
+                log?.Invoke($"[偵錯] 端點驗證通過");
+
                 var endpointConfiguration = EndpointConfiguration.Create(_configuration);
                 var endpoint = new ConfiguredEndpoint(null, endpointDescription, endpointConfiguration);
 
+                log?.Invoke($"[偵錯] 建立 ConfiguredEndpoint 完成");
+
                 // 建立 Session
+                log?.Invoke($"[偵錯] 開始建立 Session...");
                 _session = await Session.Create(
                     _configuration,
                     endpoint,
@@ -71,10 +104,27 @@ namespace OpcUaClientApp
                     null
                 );
 
-                return _session != null && _session.Connected;
+                if (_session != null && _session.Connected)
+                {
+                    log?.Invoke($"[偵錯] Session 建立成功");
+                    log?.Invoke($"[偵錯] Session ID: {_session.SessionId}");
+                    log?.Invoke($"[偵錯] 使用的端點 Security Policy: {_session.Endpoint.SecurityPolicyUri}");
+                    log?.Invoke($"[偵錯] 使用的端點 Security Mode: {_session.Endpoint.SecurityMode}");
+                    return true;
+                }
+
+                log?.Invoke($"[偵錯] Session 建立失敗");
+                return false;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                log?.Invoke($"[錯誤] 連線異常: {ex.GetType().Name}");
+                log?.Invoke($"[錯誤] 錯誤訊息: {ex.Message}");
+                if (ex.InnerException != null)
+                {
+                    log?.Invoke($"[錯誤] 內部異常: {ex.InnerException.Message}");
+                }
+                log?.Invoke($"[錯誤] 堆疊追蹤: {ex.StackTrace}");
                 return false;
             }
         }
@@ -100,15 +150,33 @@ namespace OpcUaClientApp
             };
         }
 
-        private EndpointDescription SelectEndpoint(string endpointUrl, string securityPolicyUri, MessageSecurityMode securityMode)
+        private EndpointDescription SelectEndpoint(string endpointUrl, string securityPolicyUri, MessageSecurityMode securityMode, Action<string>? log = null)
         {
             // 發現所有端點
+            log?.Invoke($"[偵錯] 建立 DiscoveryClient...");
             var endpointConfiguration = EndpointConfiguration.Create();
             endpointConfiguration.OperationTimeout = 15000;
 
             using (var discoveryClient = DiscoveryClient.Create(new Uri(endpointUrl), endpointConfiguration))
             {
+                log?.Invoke($"[偵錯] 正在取得所有可用端點...");
                 var endpoints = discoveryClient.GetEndpoints(null);
+                log?.Invoke($"[偵錯] 伺服器提供 {endpoints.Count} 個端點");
+
+                // 列出所有可用端點
+                for (int i = 0; i < endpoints.Count; i++)
+                {
+                    var ep = endpoints[i];
+                    log?.Invoke($"[偵錯] 端點 #{i + 1}:");
+                    log?.Invoke($"[偵錯]   URL: {ep.EndpointUrl}");
+                    log?.Invoke($"[偵錯]   Security Policy: {ep.SecurityPolicyUri}");
+                    log?.Invoke($"[偵錯]   Security Mode: {ep.SecurityMode}");
+                    log?.Invoke($"[偵錯]   Security Level: {ep.SecurityLevel}");
+                }
+
+                log?.Invoke($"[偵錯] 開始尋找匹配的端點...");
+                log?.Invoke($"[偵錯] 要求的 Security Policy URI: {securityPolicyUri}");
+                log?.Invoke($"[偵錯] 要求的 Security Mode: {securityMode}");
 
                 // 根據安全策略和安全模式篩選端點
                 var matchingEndpoint = endpoints.FirstOrDefault(e =>
@@ -117,11 +185,19 @@ namespace OpcUaClientApp
 
                 if (matchingEndpoint != null)
                 {
+                    log?.Invoke($"[偵錯] ✓ 找到匹配的端點！");
                     return matchingEndpoint;
                 }
 
-                // 如果沒有找到完全匹配的端點，嘗試使用預設選擇
-                return CoreClientUtils.SelectEndpoint(endpointUrl, securityPolicyUri != SecurityPolicies.None, 15000);
+                // 如果沒有找到完全匹配的端點，拋出異常
+                log?.Invoke($"[錯誤] ✗ 找不到匹配的端點！");
+                var availableEndpoints = string.Join("\n", endpoints.Select(e =>
+                    $"  - Policy: {e.SecurityPolicyUri}, Mode: {e.SecurityMode}"));
+
+                throw new Exception(
+                    $"找不到匹配的端點！\n" +
+                    $"要求: Policy={securityPolicyUri}, Mode={securityMode}\n" +
+                    $"可用的端點:\n{availableEndpoints}");
             }
         }
 

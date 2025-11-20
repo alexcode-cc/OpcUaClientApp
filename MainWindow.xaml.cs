@@ -71,7 +71,7 @@ namespace OpcUaClientApp
                 SetStatusLight(Colors.Yellow); // 連線中
 
                 _clientManager = new OpcUaClientManager();
-                bool success = await _clientManager.ConnectAsync(endpointUrl, securityPolicy, messageSecurityMode);
+                bool success = await _clientManager.ConnectAsync(endpointUrl, securityPolicy, messageSecurityMode, Log);
 
                 if (success)
                 {
